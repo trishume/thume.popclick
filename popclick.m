@@ -53,8 +53,8 @@ void new_listener(lua_State* L, Listener* listener) {
 }
 
 static int popclick_test(lua_State* L) {
-  NSLog("Hi");
-  return 1;
+  [[NSSound soundNamed:@"Hero"] play];
+  return 0;
 }
 
 static int listener_new(lua_State* L) {
@@ -74,7 +74,7 @@ static const luaL_Reg popclicklib[] = {
   {} // necessary sentinel
 };
 
-int luaopen_mjolnir_th_hints_internal(lua_State* L) {
+int luaopen_thume_popclick_internal(lua_State* L) {
   luaL_newlib(L, popclicklib);
 
   if (luaL_newmetatable(L, "thume.hints.listener")) {
