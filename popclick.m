@@ -16,7 +16,7 @@ typedef struct
   AudioQueueRef               queue;
   AudioQueueBufferRef         buffers[NUM_BUFFERS];
   AudioFileID                 audioFile;
-  UInt64                      currentPacket;
+  UInt64                      currentFrame;
   bool                        recording;
 }RecordState;
 
@@ -35,9 +35,12 @@ void AudioInputCallback(void * inUserData,  // Custom audio metadata
 - (void)setupAudioFormat:(AudioStreamBasicDescription*)format;
 - (void)startRecording;
 - (void)stopRecording;
+- (void)runCallback;
 - (void)feedSamplesToEngine:(UInt32)audioDataBytesCapacity audioData:(void *)audioData;
 - (RecordState*)recordState;
 
+@property lua_State* L;
+@property int fn;
 @end
 
 void AudioInputCallback(void * inUserData,  // Custom audio metadata
@@ -50,7 +53,6 @@ void AudioInputCallback(void * inUserData,  // Custom audio metadata
   Listener *rec = (Listener *) inUserData;
   RecordState * recordState = [rec recordState];
   if(!recordState->recording) return;
-  recordState->currentPacket += 1;
 
   AudioQueueEnqueueBuffer(recordState->queue, inBuffer, 0, NULL);
   [rec feedSamplesToEngine:inBuffer->mAudioDataBytesCapacity audioData:inBuffer->mAudioData];
@@ -61,7 +63,7 @@ void AudioInputCallback(void * inUserData,  // Custom audio metadata
 - (Listener*)initWithPlugin:(NSString*)plugin outputNumber: (NSUInteger)output {
   self = [super init];
   if (self) {
-    // stuff
+    recordState.recording = false;
   }
   return self;
 }
@@ -86,7 +88,7 @@ void AudioInputCallback(void * inUserData,  // Custom audio metadata
   if(recordState.recording) return;
   [self setupAudioFormat:&recordState.dataFormat];
 
-  recordState.currentPacket = 0;
+  recordState.currentFrame = 0;
 
   OSStatus status;
   status = AudioQueueNewInput(&recordState.dataFormat,
@@ -134,6 +136,14 @@ void AudioInputCallback(void * inUserData,  // Custom audio metadata
   for ( int i = 0; i < sampleCount; i++) {
     //Do something with samples[i]
   }
+  recordState.currentFrame += sampleCount;
+  [self performSelectorOnMainThread:@selector(runCallback) withObject:nil waitUntilDone:NO];
+}
+
+- (void)runCallback {
+  lua_State* L = self.L;
+  lua_rawgeti(L, LUA_REGISTRYINDEX, self.fn);
+  lua_call(L, 0, 0);
 }
 @end
 
@@ -150,6 +160,12 @@ static int listener_close(lua_State* L) {
   return 0;
 }
 
+static int listener_start(lua_State* L) {
+  Listener* listener = get_listener_arg(L, 1);
+  [listener startRecording];
+  return 0;
+}
+
 static int listener_eq(lua_State* L) {
   Listener* listenA = get_listener_arg(L, 1);
   Listener* listenB = get_listener_arg(L, 2);
@@ -161,7 +177,7 @@ void new_listener(lua_State* L, Listener* listener) {
   Listener** listenptr = lua_newuserdata(L, sizeof(Listener**));
   *listenptr = [listener retain];
 
-  luaL_getmetatable(L, "thume.hints.listener");
+  luaL_getmetatable(L, "thume.popclick.listener");
   lua_setmetatable(L, -2);
 }
 
@@ -174,16 +190,22 @@ static int listener_new(lua_State* L) {
   NSString* plugin = [NSString stringWithUTF8String: luaL_tolstring(L, 1, NULL)];
   CGFloat outputNumF = luaL_checknumber(L, 2);
   NSUInteger outputNum = (NSUInteger)(outputNumF);
+  luaL_checktype(L, 3, LUA_TFUNCTION);
+  lua_settop(L, 3);
+  int fn = luaL_ref(L, LUA_REGISTRYINDEX);
 
-  Listener *win = [[Listener alloc] initWithPlugin: plugin outputNumber: outputNum];
-  new_listener(L, win);
+  Listener *listener = [[Listener alloc] initWithPlugin: plugin outputNumber: outputNum];
+  listener.fn = fn;
+  listener.L = L;
+  new_listener(L, listener);
   return 1;
 }
 
 static const luaL_Reg popclicklib[] = {
   {"test", popclick_test},
-  {"__new", listener_new},
-  {"__close", listener_close},
+  {"new", listener_new},
+  {"stop", listener_close},
+  {"start", listener_start},
 
   {} // necessary sentinel
 };
@@ -191,7 +213,7 @@ static const luaL_Reg popclicklib[] = {
 int luaopen_thume_popclick_internal(lua_State* L) {
   luaL_newlib(L, popclicklib);
 
-  if (luaL_newmetatable(L, "thume.hints.listener")) {
+  if (luaL_newmetatable(L, "thume.popclick.listener")) {
     lua_pushvalue(L, -2);
     lua_setfield(L, -2, "__index");
 
