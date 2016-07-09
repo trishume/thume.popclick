@@ -31,17 +31,28 @@ dependencies = {
 }
 
 -- Build rules:
-
+external_dependencies = {
+  VAMP = {
+    header = "vamp-hostsdk/vamp-hostsdk.h"
+  }
+}
 build = {
-  type = "builtin",
-  modules = {
-    -- This is the top-level module:
-    ["thume.popclick"] = "popclick.lua",
-
-    -- If you have an internal C or Objective-C submodule, include it here:
-    ["thume.popclick.internal"] = "popclick.m",
-
-    -- Note: the key on the left side is the require-path; the value
-    --       on the right is the filename relative to the current dir.
+  type = "make",
+  build_variables = {
+     CFLAGS="$(CFLAGS)",
+     LIBFLAG="$(LIBFLAG)",
+     LUA_LIBDIR="$(LUA_LIBDIR)",
+     LUA_BINDIR="$(LUA_BINDIR)",
+     LUA_INCDIR="$(LUA_INCDIR)",
+     VAMP_LIBDIR="$(VAMP_LIBDIR)",
+     VAMP_INCDIR="$(VAMP_INCDIR)",
+     LUA="$(LUA)",
+  },
+  install_variables = {
+     INST_PREFIX="$(PREFIX)",
+     INST_BINDIR="$(BINDIR)",
+     INST_LIBDIR="$(LIBDIR)",
+     INST_LUADIR="$(LUADIR)",
+     INST_CONFDIR="$(CONFDIR)",
   },
 }

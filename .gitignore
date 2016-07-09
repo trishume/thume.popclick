@@ -1,3 +1,4 @@
 thume
+*.so
 *.o
 *.src.rock

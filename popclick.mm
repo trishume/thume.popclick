@@ -1,12 +1,34 @@
 #import <Cocoa/Cocoa.h>
 #import <Carbon/Carbon.h>
+
+extern "C" {
 #import <lauxlib.h>
+}
 
 #import <Foundation/Foundation.h>
 #import <AudioToolbox/AudioQueue.h>
 #import <AudioToolbox/AudioFile.h>
 
+#include <vamp-hostsdk/PluginHostAdapter.h>
+#include <vamp-hostsdk/PluginInputDomainAdapter.h>
+#include <vamp-hostsdk/PluginLoader.h>
+
+
+using Vamp::Plugin;
+using Vamp::PluginHostAdapter;
+using Vamp::RealTime;
+using Vamp::HostExt::PluginLoader;
+using Vamp::HostExt::PluginWrapper;
+using Vamp::HostExt::PluginInputDomainAdapter;
+
 #define NUM_BUFFERS 1
+static const int kSampleRate = 44100;
+static const int kPopInstantOutput = 7;
+static const int kTssDownOutput = 3;
+static const int kTssUpOutput = 4;
+static const int kScrollOnOutput = 3;
+static const int kScrollOffOutput = 4;
+static const int kBufferSize = 512;
 
 #define get_listener_arg(L, idx) *((Listener**)luaL_checkudata(L, idx, "thume.popclick.listener"))
 
@@ -20,29 +42,26 @@ typedef struct
   bool                        recording;
 }RecordState;
 
-void AudioInputCallback(void * inUserData,  // Custom audio metadata
-                        AudioQueueRef inAQ,
-                        AudioQueueBufferRef inBuffer,
-                        const AudioTimeStamp * inStartTime,
-                        UInt32 inNumberPacketDescriptions,
-                        const AudioStreamPacketDescription * inPacketDescs);
-
 @interface Listener : NSObject {
   RecordState recordState;
+  _VampHost::Vamp::Plugin *popPlugin;
+  _VampHost::Vamp::Plugin *tssPlugin;
 }
 
-- (Listener*)initWithPlugin:(NSString*)plugin outputNumber: (NSUInteger)output;
+- (Listener*)initPlugins;
 - (void)setupAudioFormat:(AudioStreamBasicDescription*)format;
 - (void)startRecording;
 - (void)stopRecording;
-- (void)runCallback;
 - (void)feedSamplesToEngine:(UInt32)audioDataBytesCapacity audioData:(void *)audioData;
 - (RecordState*)recordState;
+- (void)runCallbackWithEvent: (NSNumber*)evNumber;
+- (void)mainThreadCallback: (NSUInteger)evNumber;
 
 @property lua_State* L;
 @property int fn;
 @end
 
+extern "C"
 void AudioInputCallback(void * inUserData,  // Custom audio metadata
                         AudioQueueRef inAQ,
                         AudioQueueBufferRef inBuffer,
@@ -60,10 +79,23 @@ void AudioInputCallback(void * inUserData,  // Custom audio metadata
 
 @implementation Listener
 
-- (Listener*)initWithPlugin:(NSString*)plugin outputNumber: (NSUInteger)output {
+- (Listener*)initPlugins {
   self = [super init];
   if (self) {
     recordState.recording = false;
+
+    PluginLoader *loader = PluginLoader::getInstance();
+    PluginLoader::PluginKey popKey = loader->composePluginKey("popclick", "popdetector");
+    popPlugin = loader->loadPlugin(popKey, kSampleRate, PluginLoader::ADAPT_ALL);
+    PluginLoader::PluginKey tssKey = loader->composePluginKey("popclick", "tssdetector");
+    tssPlugin = loader->loadPlugin(tssKey, kSampleRate, PluginLoader::ADAPT_ALL);
+
+    if (!popPlugin->initialise(1, kBufferSize, kBufferSize)) {
+      NSLog(@"ERROR: Plugin pop initialise failed.");
+    }
+    if (!tssPlugin->initialise(1, kBufferSize, kBufferSize)) {
+      NSLog(@"ERROR: Plugin tss initialise failed.");
+    }
   }
   return self;
 }
@@ -73,7 +105,7 @@ void AudioInputCallback(void * inUserData,  // Custom audio metadata
 }
 
 - (void)setupAudioFormat:(AudioStreamBasicDescription*)format {
-    format->mSampleRate = 16000.0;
+    format->mSampleRate = kSampleRate;
 
     format->mFormatID = kAudioFormatLinearPCM;
     format->mFormatFlags = kAudioFormatFlagsNativeFloatPacked;
@@ -102,7 +134,7 @@ void AudioInputCallback(void * inUserData,  // Custom audio metadata
   if (status == 0) {
 
     for (int i = 0; i < NUM_BUFFERS; i++) {
-      AudioQueueAllocateBuffer(recordState.queue, 256, &recordState.buffers[i]);
+      AudioQueueAllocateBuffer(recordState.queue, kBufferSize*sizeof(float), &recordState.buffers[i]);
       AudioQueueEnqueueBuffer(recordState.queue, recordState.buffers[i], 0, nil);
     }
 
@@ -127,26 +159,41 @@ void AudioInputCallback(void * inUserData,  // Custom audio metadata
   AudioQueueDispose(recordState.queue, true);
   AudioFileClose(recordState.audioFile);
 }
+- (void)mainThreadCallback: (NSUInteger)evNumber {
+    [self performSelectorOnMainThread:@selector(runCallbackWithEvent:)
+      withObject:[NSNumber numberWithInt: evNumber] waitUntilDone:NO];
+}
 
 - (void)feedSamplesToEngine:(UInt32)audioDataBytesCapacity audioData:(void *)audioData {
   int sampleCount = audioDataBytesCapacity / sizeof(float);
   float *samples = (float*)audioData;
+  NSAssert(sampleCount == kBufferSize, @"Incorrect buffer size");
+  RealTime rt = RealTime::frame2RealTime(recordState.currentFrame, kSampleRate);
 
-  //Do something with the samples
-  for ( int i = 0; i < sampleCount; i++) {
-    //Do something with samples[i]
+  Plugin::FeatureSet tssFeatures = tssPlugin->process(&samples, rt);
+  if(!tssFeatures[kTssDownOutput].empty()) {
+    [self mainThreadCallback: 1];
   }
+  if(!tssFeatures[kTssUpOutput].empty()) {
+    [self mainThreadCallback: 2];
+  }
+  Plugin::FeatureSet popFeatures = popPlugin->process(&samples, rt);
+  if(!popFeatures[kPopInstantOutput].empty()) {
+    [self mainThreadCallback: 3];
+  }
+
   recordState.currentFrame += sampleCount;
-  [self performSelectorOnMainThread:@selector(runCallback) withObject:nil waitUntilDone:NO];
 }
 
-- (void)runCallback {
+- (void)runCallbackWithEvent: (NSNumber*)evNumber {
   lua_State* L = self.L;
   lua_rawgeti(L, LUA_REGISTRYINDEX, self.fn);
-  lua_call(L, 0, 0);
+  lua_pushinteger(L, [evNumber intValue]);
+  lua_call(L, 1, 0);
 }
 @end
 
+extern "C" {
 static int listener_gc(lua_State* L) {
   Listener* listener = get_listener_arg(L, 1);
   [listener stopRecording];
@@ -174,7 +221,7 @@ static int listener_eq(lua_State* L) {
 }
 
 void new_listener(lua_State* L, Listener* listener) {
-  Listener** listenptr = lua_newuserdata(L, sizeof(Listener**));
+  Listener** listenptr = (Listener**)lua_newuserdata(L, sizeof(Listener**));
   *listenptr = [listener retain];
 
   luaL_getmetatable(L, "thume.popclick.listener");
@@ -187,14 +234,10 @@ static int popclick_test(lua_State* L) {
 }
 
 static int listener_new(lua_State* L) {
-  NSString* plugin = [NSString stringWithUTF8String: luaL_tolstring(L, 1, NULL)];
-  CGFloat outputNumF = luaL_checknumber(L, 2);
-  NSUInteger outputNum = (NSUInteger)(outputNumF);
-  luaL_checktype(L, 3, LUA_TFUNCTION);
-  lua_settop(L, 3);
+  luaL_checktype(L, 1, LUA_TFUNCTION);
   int fn = luaL_ref(L, LUA_REGISTRYINDEX);
 
-  Listener *listener = [[Listener alloc] initWithPlugin: plugin outputNumber: outputNum];
+  Listener *listener = [[Listener alloc] initPlugins];
   listener.fn = fn;
   listener.L = L;
   new_listener(L, listener);
@@ -225,4 +268,5 @@ int luaopen_thume_popclick_internal(lua_State* L) {
   }
   lua_pop(L, 1);
   return 1;
+}
 }
