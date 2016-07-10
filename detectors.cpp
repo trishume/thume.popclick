@@ -37,7 +37,7 @@ Detectors::Detectors() {
     m_minFrames = 20;
     m_minFramesLong = 100;
     m_lowPassWeight = kDefaultLowPassWeight;
-    debugLog = new std::ofstream("/Users/tristan/misc/popclick.log");
+    // debugLog = new std::ofstream("/Users/tristan/misc/popclick.log");
 
     m_inReal = (float *) malloc(kBlockSize * sizeof(float));
     m_outReal = (float *) malloc(kBlockSize * sizeof(float));
@@ -57,7 +57,7 @@ Detectors::~Detectors() {
     free(m_splitData.realp);
     free(m_splitData.imagp);
     free(m_window);
-    delete debugLog;
+    // delete debugLog;
 
     vDSP_destroy_fftsetup(m_fftSetup);
 }
@@ -110,7 +110,6 @@ int Detectors::process(float *buffer) {
     float mainBand = avgBand(lowPassBuffer, kMainBandLow, kMainBandHi);
     float optionalBand = avgBand(lowPassBuffer, kOptionalBandLo, kOptionalBandHi);
     float upperBand = avgBand(lowPassBuffer, kUpperBandLo, kUpperBandHi);
-    *debugLog << lowerBand << ' ' << mainBand << ' ' << optionalBand << ' ' << upperBand << std::endl;
 
     // TODO: integer overflow if no speech for a long time
     m_framesSinceSpeech += 1;
@@ -156,6 +155,7 @@ int Detectors::process(float *buffer) {
         m_consecutiveMatches = 0;
     }
 
+    // *debugLog << lowerBand << ' ' << mainBand << ' ' << optionalBand << ' ' << upperBand << '-' << matchiness << ' ' << debugMarker << std::endl;
     return result;
 }
 
