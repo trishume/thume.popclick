@@ -29,7 +29,7 @@ static const float kDefaultLowPassWeight = 0.6;
 static const int kSpeechShadowTime = 100;
 static const float kSpeechThresh = 0.5;
 
-Detectors::Detectors(float inputSampleRate) {
+Detectors::Detectors() {
     m_sensitivity = 5.0;
     m_hysterisisFactor = 0.4;
     m_maxShiftDown = 4;
@@ -74,7 +74,7 @@ bool Detectors::initialise() {
     m_consecutiveMatches = 0;
     m_framesSinceSpeech = 1000;
     m_framesSinceMatch = 1000;
-    lowPassBuffer.resize(kBlockSize / 2 + 1, 0.0);
+    lowPassBuffer.resize(kBlockSize / 2, 0.0);
     return true;
 }
 

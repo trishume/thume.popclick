@@ -9,7 +9,7 @@ using std::string;
 
 class Detectors {
 public:
-    Detectors(float inputSampleRate);
+    Detectors();
     ~Detectors();
 
     size_t getPreferredBlockSize() const;
