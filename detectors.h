@@ -2,6 +2,7 @@
 #define _TSSDETECTOR_H_
 
 #include <vector>
+#include <fstream>
 
 #include <Accelerate/Accelerate.h>
 
@@ -41,6 +42,8 @@ protected:
     float *m_window;
     FFTSetup m_fftSetup;
     DSPSplitComplex m_splitData;
+
+    std::ofstream *debugLog;
 
     float avgBand(std::vector<float> &frame, size_t low, size_t hi);
 };
