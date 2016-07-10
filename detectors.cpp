@@ -78,19 +78,28 @@ bool Detectors::initialise() {
     return true;
 }
 
-int Detectors::process(const float *const *inputBuffers) {
+void Detectors::doFFT(float *buffer) {
+    vDSP_vmul(buffer, 1, m_window, 1, m_inReal, 1, kBlockSize);
+    vDSP_ctoz((DSPComplex *) m_inReal, 2, &m_splitData, 1, kSpectrumSize);
+    vDSP_fft_zrip(m_fftSetup, &m_splitData, 1, kLogBlockSize, FFT_FORWARD);
+    m_splitData.imagp[0] = 0.0;
+
+    float scale = (float) 1.0 / (2 * (float)kBlockSize);
+    vDSP_vsmul(m_splitData.realp, 1, &scale, m_splitData.realp, 1, kSpectrumSize);
+    vDSP_vsmul(m_splitData.imagp, 1, &scale, m_splitData.imagp, 1, kSpectrumSize);
+}
+
+int Detectors::process(float *buffer) {
     int result = 0;
-    if (kBlockSize == 0) {
-        cerr << "ERROR: Detectors::process: Not initialised" << endl;
-        return result;
-    }
 
-    size_t n = kBlockSize / 2 + 1;
-    const float *fbuf = inputBuffers[0];
+    doFFT(buffer);
 
+    size_t n = kSpectrumSize;
+
+    float scale = (float) 1.0 / (2 * (float)kBlockSize);
     for (size_t i = 0; i < n; ++i) {
-        double real = fbuf[i * 2];
-        double imag = fbuf[i * 2 + 1];
+        double real = m_splitData.realp[i];
+        double imag = m_splitData.imagp[i];
         double newVal = real * real + imag * imag;
         lowPassBuffer[i] = lowPassBuffer[i]*(1.0-m_lowPassWeight) + newVal*m_lowPassWeight;
     }

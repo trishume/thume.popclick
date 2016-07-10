@@ -17,9 +17,10 @@ public:
 
     bool initialise();
 
-    int process(const float *const *inputBuffers);
+    int process(float *buffer);
 
 protected:
+    void doFFT(float *buffer);
     // plugin-specific data and methods go here
     float m_sensitivity;
     float m_hysterisisFactor;
