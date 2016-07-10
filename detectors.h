@@ -3,22 +3,24 @@
 
 #include <vector>
 
+#include <Accelerate/Accelerate.h>
+
 using std::string;
 
 class Detectors {
 public:
     Detectors(float inputSampleRate);
+    ~Detectors();
 
     size_t getPreferredBlockSize() const;
     size_t getPreferredStepSize() const;
 
-    bool initialise(size_t channels, size_t stepSize, size_t blockSize);
+    bool initialise();
 
     int process(const float *const *inputBuffers);
 
 protected:
     // plugin-specific data and methods go here
-    int m_blockSize;
     float m_sensitivity;
     float m_hysterisisFactor;
     float m_lowPassWeight;
@@ -32,6 +34,12 @@ protected:
     int m_framesSinceSpeech;
     int m_framesSinceMatch;
     float m_savedOtherBands;
+
+    float *m_inReal;
+    float *m_outReal;
+    float *m_window;
+    FFTSetup m_fftSetup;
+    DSPSplitComplex m_splitData;
 
     float avgBand(std::vector<float> &frame, size_t low, size_t hi);
 };

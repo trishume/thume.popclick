@@ -10,8 +10,10 @@ using namespace std;
 static const bool kDelayMatch = false;
 
 static const int kDebugHeight = 9;
-static const int kPreferredBlockSize = 512;
-static const int kSpectrumSize = kPreferredBlockSize/2+1;
+static const int kBlockSize = 512;
+static const int kLogBlockSize = 9;
+static const int kSpectrumSize = kBlockSize/2;
+static const int kWindowSize = kBlockSize;
 
 static const size_t kMainBandLow = 40;
 static const size_t kMainBandHi = 100;
@@ -28,7 +30,6 @@ static const int kSpeechShadowTime = 100;
 static const float kSpeechThresh = 0.5;
 
 Detectors::Detectors(float inputSampleRate) {
-    m_blockSize = kPreferredBlockSize;
     m_sensitivity = 5.0;
     m_hysterisisFactor = 0.4;
     m_maxShiftDown = 4;
@@ -36,35 +37,55 @@ Detectors::Detectors(float inputSampleRate) {
     m_minFrames = 20;
     m_minFramesLong = 100;
     m_lowPassWeight = kDefaultLowPassWeight;
+
+    m_inReal = (float *) malloc(kBlockSize * sizeof(float));
+    m_outReal = (float *) malloc(kBlockSize * sizeof(float));
+    m_splitData.realp = (float *) malloc(kSpectrumSize * sizeof(float));
+    m_splitData.imagp = (float *) malloc(kSpectrumSize * sizeof(float));
+
+    m_window = (float *) malloc(sizeof(float) * kWindowSize);
+    memset(m_window, 0, sizeof(float) * kWindowSize);
+    vDSP_hann_window(m_window, kWindowSize, vDSP_HANN_NORM);
+
+    m_fftSetup = vDSP_create_fftsetup(kLogBlockSize, FFT_RADIX2);
+}
+
+Detectors::~Detectors() {
+    free(m_inReal);
+    free(m_outReal);
+    free(m_splitData.realp);
+    free(m_splitData.imagp);
+    free(m_window);
+
+    vDSP_destroy_fftsetup(m_fftSetup);
 }
 
 size_t Detectors::getPreferredBlockSize() const {
-    return m_blockSize;
+    return kBlockSize;
 }
 
 size_t Detectors::getPreferredStepSize() const {
-    return m_blockSize/4;
+    return kBlockSize/4;
 }
 
-bool Detectors::initialise(size_t channels, size_t, size_t blockSize) {
+bool Detectors::initialise() {
     // Real initialisation work goes here!
-    m_blockSize = blockSize;
     m_savedOtherBands = 0.0002;
     m_consecutiveMatches = 0;
     m_framesSinceSpeech = 1000;
     m_framesSinceMatch = 1000;
-    lowPassBuffer.resize(m_blockSize / 2 + 1, 0.0);
+    lowPassBuffer.resize(kBlockSize / 2 + 1, 0.0);
     return true;
 }
 
 int Detectors::process(const float *const *inputBuffers) {
     int result = 0;
-    if (m_blockSize == 0) {
+    if (kBlockSize == 0) {
         cerr << "ERROR: Detectors::process: Not initialised" << endl;
         return result;
     }
 
-    size_t n = m_blockSize / 2 + 1;
+    size_t n = kBlockSize / 2 + 1;
     const float *fbuf = inputBuffers[0];
 
     for (size_t i = 0; i < n; ++i) {
