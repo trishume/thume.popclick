@@ -2,7 +2,8 @@
 #define _TSSDETECTOR_H_
 
 #include <vector>
-#include <fstream>
+// #include <fstream>
+#include <deque>
 
 #include <Accelerate/Accelerate.h>
 
@@ -22,14 +23,12 @@ public:
 
 protected:
     void doFFT(float *buffer);
-    // plugin-specific data and methods go here
+    // Tss detection
     float m_sensitivity;
     float m_hysterisisFactor;
     float m_lowPassWeight;
     int m_minFrames;
     int m_minFramesLong;
-    int m_maxShiftDown;
-    int m_maxShiftUp;
 
     std::vector<float> lowPassBuffer;
     int m_consecutiveMatches;
@@ -37,13 +36,25 @@ protected:
     int m_framesSinceMatch;
     float m_savedOtherBands;
 
+    // Pop detection
+    std::vector<float> spectrum;
+    std::deque<float> m_popBuffer;
+    int m_maxShiftDown;
+    int m_maxShiftUp;
+    float m_popSensitivity;
+    int m_framesSincePop;
+    int m_startBin;
+    float templateAt(int i, int shift);
+    float templateDiff(float maxVal, int shift);
+    float diffCol(int templStart, int bufStart, float maxVal, int shift);
+
     float *m_inReal;
     float *m_outReal;
     float *m_window;
     FFTSetup m_fftSetup;
     DSPSplitComplex m_splitData;
 
-    std::ofstream *debugLog;
+    // std::ofstream *debugLog;
 
     float avgBand(std::vector<float> &frame, size_t low, size_t hi);
 };

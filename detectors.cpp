@@ -7,6 +7,8 @@
 
 using namespace std;
 
+#include "poptemplate.h"
+
 static const bool kDelayMatch = false;
 
 static const int kDebugHeight = 9;
@@ -30,15 +32,23 @@ static const int kSpeechShadowTime = 100;
 static const float kSpeechThresh = 0.5;
 
 Detectors::Detectors() {
+    // === Tss Detection
     m_sensitivity = 5.0;
     m_hysterisisFactor = 0.4;
-    m_maxShiftDown = 4;
-    m_maxShiftUp = 2;
     m_minFrames = 20;
     m_minFramesLong = 100;
     m_lowPassWeight = kDefaultLowPassWeight;
+
+    // === Pop detection
+    m_startBin = 2;
+    m_maxShiftDown = 4;
+    m_maxShiftUp = 2;
+    m_popSensitivity = 8.5;
+    m_framesSincePop = 0;
+
     // debugLog = new std::ofstream("/Users/tristan/misc/popclick.log");
 
+    // === FFT
     m_inReal = (float *) malloc(kBlockSize * sizeof(float));
     m_outReal = (float *) malloc(kBlockSize * sizeof(float));
     m_splitData.realp = (float *) malloc(kSpectrumSize * sizeof(float));
@@ -76,7 +86,14 @@ bool Detectors::initialise() {
     m_consecutiveMatches = 0;
     m_framesSinceSpeech = 1000;
     m_framesSinceMatch = 1000;
-    lowPassBuffer.resize(kBlockSize / 2, 0.0);
+    lowPassBuffer.resize(kSpectrumSize, 0.0);
+
+    spectrum.resize(kSpectrumSize, 0.0);
+    m_popBuffer.clear();
+    for(unsigned i = 0; i < kBufferSize; ++i) {
+        m_popBuffer.push_back(0.0);
+    }
+
     return true;
 }
 
@@ -103,6 +120,7 @@ int Detectors::process(float *buffer) {
         double real = m_splitData.realp[i];
         double imag = m_splitData.imagp[i];
         double newVal = real * real + imag * imag;
+        spectrum[i] = newVal;
         lowPassBuffer[i] = lowPassBuffer[i]*(1.0-m_lowPassWeight) + newVal*m_lowPassWeight;
     }
 
@@ -155,6 +173,30 @@ int Detectors::process(float *buffer) {
         m_consecutiveMatches = 0;
     }
 
+    // ===================== Pop Detection =================================
+    // update buffer forward one time step
+    for(unsigned i = 0; i < kBufferPrimaryHeight; ++i) {
+        m_popBuffer.pop_front();
+        m_popBuffer.push_back(spectrum[i]);
+    }
+    // high frequencies aren't useful so we bin them all together
+    m_popBuffer.pop_front();
+    float highSum = accumulate(spectrum.begin()+kBufferPrimaryHeight,spectrum.end(),0.0);
+    m_popBuffer.push_back(highSum);
+
+    auto maxIt = max_element(m_popBuffer.begin(), m_popBuffer.end());
+    float minDiff = 10000000.0;
+    for(int i = -m_maxShiftUp; i < m_maxShiftDown; ++i) {
+        float diff = templateDiff(*maxIt, i);
+        if(diff < minDiff) minDiff = diff;
+    }
+
+    m_framesSincePop += 1;
+    if(minDiff < m_popSensitivity && m_framesSincePop > 15) {
+        result |= 4; // Detected pop
+        m_framesSincePop = 0;
+    }
+
     // *debugLog << lowerBand << ' ' << mainBand << ' ' << optionalBand << ' ' << upperBand << '-' << matchiness << ' ' << debugMarker << std::endl;
     return result;
 }
@@ -165,5 +207,33 @@ float Detectors::avgBand(std::vector<float> &frame, size_t low, size_t hi) {
         sum += frame[i];
     }
     return sum / (hi - low);
+}
+
+float Detectors::templateAt(int i, int shift) {
+    int bin = i % kBufferHeight;
+    if(i % kBufferHeight >= kBufferPrimaryHeight) {
+        return kPopTemplate[i]/kPopTemplateMax;
+    }
+    if(bin+shift < 0 || bin+shift >= kBufferPrimaryHeight) {
+        return 0.0;
+    }
+    return kPopTemplate[i+shift]/kPopTemplateMax;
+}
+
+float Detectors::diffCol(int templStart, int bufStart, float maxVal, int shift) {
+    float diff = 0;
+    for(unsigned i = m_startBin; i < kBufferHeight; ++i) {
+        float d = templateAt(templStart+i, shift) - m_popBuffer[bufStart+i]/maxVal;
+        diff += abs(d);
+    }
+    return diff;
+}
+
+float Detectors::templateDiff(float maxVal, int shift) {
+    float diff = 0;
+    for(unsigned i = 0; i < kBufferSize; i += kBufferHeight) {
+        diff += diffCol(i,i, maxVal,shift);
+    }
+    return diff;
 }
 

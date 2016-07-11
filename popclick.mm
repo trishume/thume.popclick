@@ -153,10 +153,13 @@ void AudioInputCallback(void * inUserData,  // Custom audio metadata
 
   int result = detectors->process(samples);
   if((result & 1) == 1) {
-    [self mainThreadCallback: 1];
+    [self mainThreadCallback: 1]; // Tss on
   }
   if((result & 2) == 2) {
-    [self mainThreadCallback: 2];
+    [self mainThreadCallback: 2]; // Tss off
+  }
+  if((result & 4) == 4) {
+    [self mainThreadCallback: 3]; // Pop
   }
 
   recordState.currentFrame += sampleCount;
