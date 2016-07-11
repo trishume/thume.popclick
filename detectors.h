@@ -15,14 +15,18 @@ public:
     ~Detectors();
 
     size_t getPreferredBlockSize() const;
-    size_t getPreferredStepSize() const;
 
     bool initialise();
 
     int process(float *buffer);
 
 protected:
-    void doFFT(float *buffer);
+    int processChunk(const float *buffer);
+    void doFFT(const float *buffer);
+
+    // Overlap
+    float *overlapBuffer;
+
     // Tss detection
     float m_sensitivity;
     float m_hysterisisFactor;

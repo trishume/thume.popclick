@@ -17,6 +17,9 @@ static const int kLogBlockSize = 9;
 static const int kSpectrumSize = kBlockSize/2;
 static const int kWindowSize = kBlockSize;
 
+static const int kNumSteps = 4;
+static const int kStepSize = kBlockSize / kNumSteps;
+
 static const size_t kMainBandLow = 40;
 static const size_t kMainBandHi = 100;
 static const size_t kOptionalBandHi = 180;
@@ -32,6 +35,8 @@ static const int kSpeechShadowTime = 100;
 static const float kSpeechThresh = 0.5;
 
 Detectors::Detectors() {
+    overlapBuffer = (float *) malloc(kBlockSize * 2 * sizeof(float));
+
     // === Tss Detection
     m_sensitivity = 5.0;
     m_hysterisisFactor = 0.4;
@@ -62,6 +67,8 @@ Detectors::Detectors() {
 }
 
 Detectors::~Detectors() {
+    free(overlapBuffer);
+
     free(m_inReal);
     free(m_outReal);
     free(m_splitData.realp);
@@ -74,10 +81,6 @@ Detectors::~Detectors() {
 
 size_t Detectors::getPreferredBlockSize() const {
     return kBlockSize;
-}
-
-size_t Detectors::getPreferredStepSize() const {
-    return kBlockSize/4;
 }
 
 bool Detectors::initialise() {
@@ -97,7 +100,22 @@ bool Detectors::initialise() {
     return true;
 }
 
-void Detectors::doFFT(float *buffer) {
+int Detectors::process(float *buffer) {
+    // return processChunk(buffer);
+    // copy last frame to start of the buffer
+    std::copy(overlapBuffer+kBlockSize, overlapBuffer+(kBlockSize*2), overlapBuffer);
+    // copy new input to the second half of the overlap buffer
+    std::copy(buffer,buffer+kBlockSize,overlapBuffer+kBlockSize);
+
+    int result = 0;
+    for(int i = 0; i < kNumSteps; ++i) {
+        float *ptr = overlapBuffer+((i+1)*kStepSize);
+        result |= processChunk(ptr);
+    }
+    return result;
+}
+
+void Detectors::doFFT(const float *buffer) {
     vDSP_vmul(buffer, 1, m_window, 1, m_inReal, 1, kBlockSize);
     vDSP_ctoz((DSPComplex *) m_inReal, 2, &m_splitData, 1, kSpectrumSize);
     vDSP_fft_zrip(m_fftSetup, &m_splitData, 1, kLogBlockSize, FFT_FORWARD);
@@ -108,11 +126,10 @@ void Detectors::doFFT(float *buffer) {
     vDSP_vsmul(m_splitData.imagp, 1, &scale, m_splitData.imagp, 1, kSpectrumSize);
 }
 
-int Detectors::process(float *buffer) {
-    int result = 0;
-
+int Detectors::processChunk(const float *buffer) {
     doFFT(buffer);
 
+    int result = 0;
     size_t n = kSpectrumSize;
 
     float scale = (float) 1.0 / (2 * (float)kBlockSize);

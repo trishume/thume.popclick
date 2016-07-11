@@ -1,13 +1,13 @@
 all: internal.so
 
 internal.so: popclick.o detectors.o
-	$(CC) $(LIBFLAG) -o $@ -std=c++11 -stdlib=libc++ -L$(LUA_LIBDIR) popclick.o detectors.o
+	$(CC) $(LIBFLAG) -g -o $@ -std=c++11 -stdlib=libc++ -L$(LUA_LIBDIR) popclick.o detectors.o
 
-popclick.o: popclick.mm
-	$(CC) -c $(CFLAGS) -I$(LUA_INCDIR) -std=c++11 -stdlib=libc++ $< -o $@
+popclick.o: popclick.mm detectors.h
+	$(CC) -g -c $(CFLAGS) -I$(LUA_INCDIR) -std=c++11 -stdlib=libc++ $< -o $@
 
-detectors.o: detectors.cpp
-	$(CC) -c $(CFLAGS) -std=c++11 -stdlib=libc++ $< -o $@
+detectors.o: detectors.cpp detectors.h popTemplate.h
+	$(CC) -g -c $(CFLAGS) -std=c++11 -stdlib=libc++ $< -o $@
 
 install: internal.so popclick.lua
 	mkdir -p $(INST_LIBDIR)/thume/popclick/
