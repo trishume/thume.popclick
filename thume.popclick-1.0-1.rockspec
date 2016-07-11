@@ -31,11 +31,6 @@ dependencies = {
 }
 
 -- Build rules:
-external_dependencies = {
-  VAMP = {
-    header = "vamp-hostsdk/vamp-hostsdk.h"
-  }
-}
 build = {
   type = "make",
   build_variables = {
@@ -44,8 +39,6 @@ build = {
      LUA_LIBDIR="$(LUA_LIBDIR)",
      LUA_BINDIR="$(LUA_BINDIR)",
      LUA_INCDIR="$(LUA_INCDIR)",
-     VAMP_LIBDIR="$(VAMP_LIBDIR)",
-     VAMP_INCDIR="$(VAMP_INCDIR)",
      LUA="$(LUA)",
   },
   install_variables = {

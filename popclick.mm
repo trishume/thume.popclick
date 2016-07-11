@@ -9,17 +9,7 @@ extern "C" {
 #import <AudioToolbox/AudioQueue.h>
 #import <AudioToolbox/AudioFile.h>
 
-#include <vamp-hostsdk/PluginHostAdapter.h>
-#include <vamp-hostsdk/PluginInputDomainAdapter.h>
-#include <vamp-hostsdk/PluginLoader.h>
-
-
-using Vamp::Plugin;
-using Vamp::PluginHostAdapter;
-using Vamp::RealTime;
-using Vamp::HostExt::PluginLoader;
-using Vamp::HostExt::PluginWrapper;
-using Vamp::HostExt::PluginInputDomainAdapter;
+#include "detectors.h"
 
 #define NUM_BUFFERS 1
 static const int kSampleRate = 44100;
@@ -28,7 +18,6 @@ static const int kTssDownOutput = 3;
 static const int kTssUpOutput = 4;
 static const int kScrollOnOutput = 3;
 static const int kScrollOffOutput = 4;
-static const int kBufferSize = 512;
 
 #define get_listener_arg(L, idx) *((Listener**)luaL_checkudata(L, idx, "thume.popclick.listener"))
 
@@ -44,8 +33,7 @@ typedef struct
 
 @interface Listener : NSObject {
   RecordState recordState;
-  _VampHost::Vamp::Plugin *popPlugin;
-  _VampHost::Vamp::Plugin *tssPlugin;
+  Detectors *detectors;
 }
 
 - (Listener*)initPlugins;
@@ -83,21 +71,15 @@ void AudioInputCallback(void * inUserData,  // Custom audio metadata
   self = [super init];
   if (self) {
     recordState.recording = false;
-
-    PluginLoader *loader = PluginLoader::getInstance();
-    PluginLoader::PluginKey popKey = loader->composePluginKey("popclick", "popdetector");
-    popPlugin = loader->loadPlugin(popKey, kSampleRate, PluginLoader::ADAPT_ALL);
-    PluginLoader::PluginKey tssKey = loader->composePluginKey("popclick", "tssdetector");
-    tssPlugin = loader->loadPlugin(tssKey, kSampleRate, PluginLoader::ADAPT_ALL);
-
-    if (!popPlugin->initialise(1, kBufferSize, kBufferSize)) {
-      NSLog(@"ERROR: Plugin pop initialise failed.");
-    }
-    if (!tssPlugin->initialise(1, kBufferSize, kBufferSize)) {
-      NSLog(@"ERROR: Plugin tss initialise failed.");
-    }
+    detectors = new Detectors();
+    detectors->initialise();
   }
   return self;
+}
+
+- (void)dealloc {
+  delete detectors;
+  [super dealloc];
 }
 
 - (RecordState*)recordState {
@@ -134,7 +116,7 @@ void AudioInputCallback(void * inUserData,  // Custom audio metadata
   if (status == 0) {
 
     for (int i = 0; i < NUM_BUFFERS; i++) {
-      AudioQueueAllocateBuffer(recordState.queue, kBufferSize*sizeof(float), &recordState.buffers[i]);
+      AudioQueueAllocateBuffer(recordState.queue, detectors->getPreferredBlockSize()*sizeof(float), &recordState.buffers[i]);
       AudioQueueEnqueueBuffer(recordState.queue, recordState.buffers[i], 0, nil);
     }
 
@@ -167,19 +149,14 @@ void AudioInputCallback(void * inUserData,  // Custom audio metadata
 - (void)feedSamplesToEngine:(UInt32)audioDataBytesCapacity audioData:(void *)audioData {
   int sampleCount = audioDataBytesCapacity / sizeof(float);
   float *samples = (float*)audioData;
-  NSAssert(sampleCount == kBufferSize, @"Incorrect buffer size");
-  RealTime rt = RealTime::frame2RealTime(recordState.currentFrame, kSampleRate);
+  NSAssert(sampleCount == detectors->getPreferredBlockSize(), @"Incorrect buffer size");
 
-  Plugin::FeatureSet tssFeatures = tssPlugin->process(&samples, rt);
-  if(!tssFeatures[kTssDownOutput].empty()) {
+  int result = detectors->process(samples);
+  if((result & 1) == 1) {
     [self mainThreadCallback: 1];
   }
-  if(!tssFeatures[kTssUpOutput].empty()) {
+  if((result & 2) == 2) {
     [self mainThreadCallback: 2];
-  }
-  Plugin::FeatureSet popFeatures = popPlugin->process(&samples, rt);
-  if(!popFeatures[kPopInstantOutput].empty()) {
-    [self mainThreadCallback: 3];
   }
 
   recordState.currentFrame += sampleCount;
