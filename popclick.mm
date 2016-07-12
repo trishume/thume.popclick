@@ -181,16 +181,36 @@ static int listener_gc(lua_State* L) {
   return 0;
 }
 
-static int listener_close(lua_State* L) {
+/// thume.popclick.listener:stop() -> self
+/// Method
+/// Stops the listener from recording and analyzing microphone input.
+///
+/// Parameters:
+///  * None
+///
+/// Returns:
+///  * The `thume.popclick.listener` object
+static int listener_stop(lua_State* L) {
   Listener* listener = get_listener_arg(L, 1);
   [listener stopRecording];
-  return 0;
+  lua_settop(L,1);
+  return 1;
 }
 
+/// thume.popclick.listener:start() -> self
+/// Method
+/// Starts listening to the microphone and passing the audio to the recognizer.
+///
+/// Parameters:
+///  * None
+///
+/// Returns:
+///  * The `thume.popclick.listener` object
 static int listener_start(lua_State* L) {
   Listener* listener = get_listener_arg(L, 1);
   [listener startRecording];
-  return 0;
+  lua_settop(L,1);
+  return 1;
 }
 
 static int listener_eq(lua_State* L) {
@@ -208,11 +228,15 @@ void new_listener(lua_State* L, Listener* listener) {
   lua_setmetatable(L, -2);
 }
 
-static int popclick_test(lua_State* L) {
-  [[NSSound soundNamed:@"Hero"] play];
-  return 0;
-}
-
+/// thume.popclick.new(fn) -> listener
+/// Method
+/// Creates a new listener for mouth noise recognition
+///
+/// Parameters:
+///  * A function that is called when a mouth noise is recognized. It should accept a single parameter which will be a number representing the event type.
+///
+/// Returns:
+///  * A `thume.popclick.listener` object
 static int listener_new(lua_State* L) {
   luaL_checktype(L, 1, LUA_TFUNCTION);
   int fn = luaL_ref(L, LUA_REGISTRYINDEX);
@@ -225,9 +249,8 @@ static int listener_new(lua_State* L) {
 }
 
 static const luaL_Reg popclicklib[] = {
-  {"test", popclick_test},
   {"new", listener_new},
-  {"stop", listener_close},
+  {"stop", listener_stop},
   {"start", listener_start},
 
   {} // necessary sentinel
