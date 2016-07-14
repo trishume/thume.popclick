@@ -1,9 +1,6 @@
 #import <Cocoa/Cocoa.h>
 #import <Carbon/Carbon.h>
-
-extern "C" {
 #import <lauxlib.h>
-}
 
 #import <Foundation/Foundation.h>
 #import <AudioToolbox/AudioQueue.h>
@@ -33,7 +30,7 @@ typedef struct
 
 @interface Listener : NSObject {
   RecordState recordState;
-  Detectors *detectors;
+  detectors_t *detectors;
 }
 
 - (Listener*)initPlugins;
@@ -49,7 +46,6 @@ typedef struct
 @property int fn;
 @end
 
-extern "C"
 void AudioInputCallback(void * inUserData,  // Custom audio metadata
                         AudioQueueRef inAQ,
                         AudioQueueBufferRef inBuffer,
@@ -71,14 +67,13 @@ void AudioInputCallback(void * inUserData,  // Custom audio metadata
   self = [super init];
   if (self) {
     recordState.recording = false;
-    detectors = new Detectors();
-    detectors->initialise();
+    detectors = detectors_new();
   }
   return self;
 }
 
 - (void)dealloc {
-  delete detectors;
+  detectors_free(detectors);
   [super dealloc];
 }
 
@@ -116,7 +111,7 @@ void AudioInputCallback(void * inUserData,  // Custom audio metadata
   if (status == 0) {
 
     for (int i = 0; i < NUM_BUFFERS; i++) {
-      AudioQueueAllocateBuffer(recordState.queue, detectors->getPreferredBlockSize()*sizeof(float), &recordState.buffers[i]);
+      AudioQueueAllocateBuffer(recordState.queue, DETECTORS_BLOCK_SIZE*sizeof(float), &recordState.buffers[i]);
       AudioQueueEnqueueBuffer(recordState.queue, recordState.buffers[i], 0, nil);
     }
 
@@ -149,9 +144,9 @@ void AudioInputCallback(void * inUserData,  // Custom audio metadata
 - (void)feedSamplesToEngine:(UInt32)audioDataBytesCapacity audioData:(void *)audioData {
   int sampleCount = audioDataBytesCapacity / sizeof(float);
   float *samples = (float*)audioData;
-  NSAssert(sampleCount == detectors->getPreferredBlockSize(), @"Incorrect buffer size");
+  NSAssert(sampleCount == DETECTORS_BLOCK_SIZE, @"Incorrect buffer size");
 
-  int result = detectors->process(samples);
+  int result = detectors_process(detectors, samples);
   if((result & 1) == 1) {
     [self mainThreadCallback: 1]; // Tss on
   }
@@ -173,7 +168,6 @@ void AudioInputCallback(void * inUserData,  // Custom audio metadata
 }
 @end
 
-extern "C" {
 static int listener_gc(lua_State* L) {
   Listener* listener = get_listener_arg(L, 1);
   [listener stopRecording];
@@ -271,5 +265,4 @@ int luaopen_thume_popclick_internal(lua_State* L) {
   }
   lua_pop(L, 1);
   return 1;
-}
 }

@@ -1,24 +1,39 @@
-#ifndef _TSSDETECTOR_H_
-#define _TSSDETECTOR_H_
+#ifndef _DETECTORS_H_
+#define _DETECTORS_H_
+
+// this header file and its implementation are intentionally not specific to use in Lua so that they can be copy-pasted
+// into any other project that wants to use them. It's open source so might as well make sharing easy.
+// The header exposes a C API along with C++ so that it can be used from .m and .c files and not just .mm and .cpp files
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#define DETECTORS_BLOCK_SIZE 512
+
+typedef void detectors_t; // just an opaque wrapper for the C++ type
+detectors_t *detectors_new();
+void detectors_free(detectors_t *detectors);
+int detectors_process(detectors_t *detectors, const float *buffer);
+
+#ifdef __cplusplus
+}
+#endif
+
+// Also expose C++ API if used from C++ (or included in the implementation file)
+#ifdef __cplusplus
 
 #include <vector>
-// #include <fstream>
 #include <deque>
-
 #include <Accelerate/Accelerate.h>
-
-using std::string;
-
 class Detectors {
 public:
     Detectors();
     ~Detectors();
 
-    size_t getPreferredBlockSize() const;
-
     bool initialise();
 
-    int process(float *buffer);
+    int process(const float *buffer);
 
 protected:
     int processChunk(const float *buffer);
@@ -58,11 +73,8 @@ protected:
     FFTSetup m_fftSetup;
     DSPSplitComplex m_splitData;
 
-    // std::ofstream *debugLog;
-
     float avgBand(std::vector<float> &frame, size_t low, size_t hi);
 };
-
-
+#endif
 
 #endif

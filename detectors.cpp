@@ -12,7 +12,7 @@ using namespace std;
 static const bool kDelayMatch = false;
 
 static const int kDebugHeight = 9;
-static const int kBlockSize = 512;
+static const int kBlockSize = DETECTORS_BLOCK_SIZE;
 static const int kLogBlockSize = 9;
 static const int kSpectrumSize = kBlockSize/2;
 static const int kWindowSize = kBlockSize;
@@ -79,10 +79,6 @@ Detectors::~Detectors() {
     vDSP_destroy_fftsetup(m_fftSetup);
 }
 
-size_t Detectors::getPreferredBlockSize() const {
-    return kBlockSize;
-}
-
 bool Detectors::initialise() {
     // Real initialisation work goes here!
     m_savedOtherBands = 0.0002;
@@ -100,7 +96,7 @@ bool Detectors::initialise() {
     return true;
 }
 
-int Detectors::process(float *buffer) {
+int Detectors::process(const float *buffer) {
     // return processChunk(buffer);
     // copy last frame to start of the buffer
     std::copy(overlapBuffer+kBlockSize, overlapBuffer+(kBlockSize*2), overlapBuffer);
@@ -252,5 +248,21 @@ float Detectors::templateDiff(float maxVal, int shift) {
         diff += diffCol(i,i, maxVal,shift);
     }
     return diff;
+}
+
+extern "C" {
+    detectors_t *detectors_new() {
+        Detectors *dets = new Detectors();
+        dets->initialise();
+        return (detectors_t*)dets;
+    }
+    void detectors_free(detectors_t *detectors) {
+        Detectors *dets = (Detectors*)detectors;
+        delete dets;
+    }
+    int detectors_process(detectors_t *detectors, const float *buffer) {
+        Detectors *dets = (Detectors*)detectors;
+        return dets->process(buffer);
+    }
 }
 
