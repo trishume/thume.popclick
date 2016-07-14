@@ -1,7 +1,6 @@
 #import <Cocoa/Cocoa.h>
 #import <Carbon/Carbon.h>
 #import <lauxlib.h>
-
 #import <Foundation/Foundation.h>
 #import <AudioToolbox/AudioQueue.h>
 #import <AudioToolbox/AudioFile.h>
@@ -16,7 +15,8 @@ static const int kTssUpOutput = 4;
 static const int kScrollOnOutput = 3;
 static const int kScrollOffOutput = 4;
 
-#define get_listener_arg(L, idx) *((Listener**)luaL_checkudata(L, idx, "thume.popclick.listener"))
+#define USERDATA_TAG "thume.popclick.listener"
+#define get_listener_arg(L, idx) (__bridge Listener*)*((void**)luaL_checkudata(L, idx, USERDATA_TAG))
 
 typedef struct
 {
@@ -28,11 +28,7 @@ typedef struct
   bool                        recording;
 }RecordState;
 
-@interface Listener : NSObject {
-  RecordState recordState;
-  detectors_t *detectors;
-}
-
+@interface Listener : NSObject
 - (Listener*)initPlugins;
 - (void)setupAudioFormat:(AudioStreamBasicDescription*)format;
 - (void)startRecording;
@@ -53,7 +49,7 @@ void AudioInputCallback(void * inUserData,  // Custom audio metadata
                         UInt32 inNumberPacketDescriptions,
                         const AudioStreamPacketDescription * inPacketDescs) {
 
-  Listener *rec = (Listener *) inUserData;
+  Listener *rec = (__bridge Listener *)inUserData;
   RecordState * recordState = [rec recordState];
   if(!recordState->recording) return;
 
@@ -61,7 +57,10 @@ void AudioInputCallback(void * inUserData,  // Custom audio metadata
   [rec feedSamplesToEngine:inBuffer->mAudioDataBytesCapacity audioData:inBuffer->mAudioData];
 }
 
-@implementation Listener
+@implementation Listener {
+  RecordState recordState;
+  detectors_t *detectors;
+}
 
 - (Listener*)initPlugins {
   self = [super init];
@@ -73,8 +72,8 @@ void AudioInputCallback(void * inUserData,  // Custom audio metadata
 }
 
 - (void)dealloc {
+  [self stopRecording]; // remove callbacks if not already stopped before deallocating
   detectors_free(detectors);
-  [super dealloc];
 }
 
 - (RecordState*)recordState {
@@ -102,7 +101,7 @@ void AudioInputCallback(void * inUserData,  // Custom audio metadata
   OSStatus status;
   status = AudioQueueNewInput(&recordState.dataFormat,
                               AudioInputCallback,
-                              self,
+                              (__bridge void *)self,
                               CFRunLoopGetCurrent(),
                               kCFRunLoopCommonModes,
                               0,
@@ -169,9 +168,12 @@ void AudioInputCallback(void * inUserData,  // Custom audio metadata
 @end
 
 static int listener_gc(lua_State* L) {
-  Listener* listener = get_listener_arg(L, 1);
+  // Have to some contortions to make sure ARC properly frees the Listener
+  void **userdata = (void**)luaL_checkudata(L, 1, USERDATA_TAG);
+  Listener *listener = (__bridge_transfer Listener*)(*userdata);
   [listener stopRecording];
-  [listener release];
+  *userdata = nil;
+  listener = nil;
   return 0;
 }
 
@@ -215,10 +217,10 @@ static int listener_eq(lua_State* L) {
 }
 
 void new_listener(lua_State* L, Listener* listener) {
-  Listener** listenptr = (Listener**)lua_newuserdata(L, sizeof(Listener**));
-  *listenptr = [listener retain];
+  void** listenptr = lua_newuserdata(L, sizeof(Listener**));
+  *listenptr = (__bridge_retained void*)listener;
 
-  luaL_getmetatable(L, "thume.popclick.listener");
+  luaL_getmetatable(L, USERDATA_TAG);
   lua_setmetatable(L, -2);
 }
 
@@ -253,7 +255,7 @@ static const luaL_Reg popclicklib[] = {
 int luaopen_thume_popclick_internal(lua_State* L) {
   luaL_newlib(L, popclicklib);
 
-  if (luaL_newmetatable(L, "thume.popclick.listener")) {
+  if (luaL_newmetatable(L, USERDATA_TAG)) {
     lua_pushvalue(L, -2);
     lua_setfield(L, -2, "__index");
 

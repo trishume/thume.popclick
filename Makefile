@@ -4,7 +4,7 @@ internal.so: popclick.o detectors.o
 	$(CC) $(LIBFLAG) -g -o $@ -std=c++11 -stdlib=libc++ -L$(LUA_LIBDIR) popclick.o detectors.o
 
 popclick.o: popclick.m detectors.h
-	$(CC) -g -c $(CFLAGS) -I$(LUA_INCDIR) $< -o $@
+	$(CC) -g -c $(CFLAGS) -I$(LUA_INCDIR) -fobjc-arc $< -o $@
 
 detectors.o: detectors.cpp detectors.h popTemplate.h
 	$(CC) -g -c $(CFLAGS) -std=c++11 -stdlib=libc++ $< -o $@
