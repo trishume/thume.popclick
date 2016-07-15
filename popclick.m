@@ -7,13 +7,11 @@
 
 #include "detectors.h"
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdirect-ivar-access"
+
 #define NUM_BUFFERS 1
 static const int kSampleRate = 44100;
-static const int kPopInstantOutput = 7;
-static const int kTssDownOutput = 3;
-static const int kTssUpOutput = 4;
-static const int kScrollOnOutput = 3;
-static const int kScrollOffOutput = 4;
 
 #define USERDATA_TAG "thume.popclick.listener"
 #define get_listener_arg(L, idx) (__bridge Listener*)*((void**)luaL_checkudata(L, idx, USERDATA_TAG))
@@ -137,7 +135,7 @@ void AudioInputCallback(void * inUserData,  // Custom audio metadata
 }
 - (void)mainThreadCallback: (NSUInteger)evNumber {
     [self performSelectorOnMainThread:@selector(runCallbackWithEvent:)
-      withObject:[NSNumber numberWithInt: evNumber] waitUntilDone:NO];
+      withObject:[NSNumber numberWithLong: evNumber] waitUntilDone:NO];
 }
 
 - (void)feedSamplesToEngine:(UInt32)audioDataBytesCapacity audioData:(void *)audioData {
@@ -146,13 +144,13 @@ void AudioInputCallback(void * inUserData,  // Custom audio metadata
   NSAssert(sampleCount == DETECTORS_BLOCK_SIZE, @"Incorrect buffer size");
 
   int result = detectors_process(detectors, samples);
-  if((result & 1) == 1) {
+  if((result & TSS_START_CODE) == TSS_START_CODE) {
     [self mainThreadCallback: 1]; // Tss on
   }
-  if((result & 2) == 2) {
+  if((result & TSS_STOP_CODE) == TSS_STOP_CODE) {
     [self mainThreadCallback: 2]; // Tss off
   }
-  if((result & 4) == 4) {
+  if((result & POP_CODE) == POP_CODE) {
     [self mainThreadCallback: 3]; // Pop
   }
 
@@ -249,7 +247,7 @@ static const luaL_Reg popclicklib[] = {
   {"stop", listener_stop},
   {"start", listener_start},
 
-  {} // necessary sentinel
+  {NULL, NULL} // necessary sentinel
 };
 
 int luaopen_thume_popclick_internal(lua_State* L) {
@@ -268,3 +266,5 @@ int luaopen_thume_popclick_internal(lua_State* L) {
   lua_pop(L, 1);
   return 1;
 }
+
+#pragma clang diagnostic pop

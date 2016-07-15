@@ -10,6 +10,9 @@ extern "C" {
 #endif
 
 #define DETECTORS_BLOCK_SIZE 512
+#define TSS_START_CODE 1
+#define TSS_STOP_CODE 2
+#define POP_CODE 4
 
 typedef void detectors_t; // just an opaque wrapper for the C++ type
 detectors_t *detectors_new();
@@ -40,7 +43,7 @@ protected:
     void doFFT(const float *buffer);
 
     // Overlap
-    float *overlapBuffer;
+    float *m_overlapBuffer;
 
     // Tss detection
     float m_sensitivity;
@@ -49,26 +52,25 @@ protected:
     int m_minFrames;
     int m_minFramesLong;
 
-    std::vector<float> lowPassBuffer;
+    std::vector<float> m_lowPassBuffer;
     int m_consecutiveMatches;
-    int m_framesSinceSpeech;
-    int m_framesSinceMatch;
+    unsigned long m_framesSinceSpeech;
+    unsigned long m_framesSinceMatch;
     float m_savedOtherBands;
 
     // Pop detection
-    std::vector<float> spectrum;
+    std::vector<float> m_spectrum;
     std::deque<float> m_popBuffer;
     int m_maxShiftDown;
     int m_maxShiftUp;
     float m_popSensitivity;
-    int m_framesSincePop;
+    unsigned long m_framesSincePop;
     int m_startBin;
     float templateAt(int i, int shift);
     float templateDiff(float maxVal, int shift);
     float diffCol(int templStart, int bufStart, float maxVal, int shift);
 
     float *m_inReal;
-    float *m_outReal;
     float *m_window;
     FFTSetup m_fftSetup;
     DSPSplitComplex m_splitData;
