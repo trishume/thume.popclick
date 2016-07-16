@@ -9,6 +9,10 @@ popclick.o: popclick.m detectors.h
 detectors.o: detectors.cpp detectors.h popTemplate.h
 	$(CC) -g -c $(CFLAGS) -std=c++11 -stdlib=libc++ $< -o $@
 
+clean:
+	rm *.o
+	rm internal.so
+
 install: internal.so popclick.lua
 	mkdir -p $(INST_LIBDIR)/thume/popclick/
 	cp internal.so $(INST_LIBDIR)/thume/popclick/
